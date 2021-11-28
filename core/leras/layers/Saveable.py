@@ -57,9 +57,19 @@ class Saveable():
                 w_val = w_val.astype(force_dtype)
 
             d[ w_name_split[1] ] = w_val
+        del w_val
+        #workaround 
+        p = Path(filename)
+        p_tmp = p.parent / (p.name + '.tmp')
+        with open(p_tmp, 'wb') as tmp_file:
+            pickle.dump(d, tmp_file, 4)
+        del d 
+        if p.exists():
+            p.unlink()
+        p_tmp.rename (p)
 
-        d_dumped = pickle.dumps (d, 4)
-        pathex.write_bytes_safe ( Path(filename), d_dumped )
+        # d_dumped = pickle.dumps (d, 4)
+        # pathex.write_bytes_safe ( Path(filename), d_dumped )
 
     def load_weights(self, filename):
         """
