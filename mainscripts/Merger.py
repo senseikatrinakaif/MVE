@@ -13,7 +13,7 @@ from core.interact import interact as io
 from core.joblib import MPClassFuncOnDemand, MPFunc
 from core.leras import nn
 from DFLIMG import DFLIMG
-from facelib import FaceEnhancer, FaceType, LandmarksProcessor, XSegNet
+from facelib import FaceEnhancer, FaceType, LandmarksProcessor, XSegNet, GPEN
 from merger import FrameInfo, InteractiveMergerSubprocessor, MergerConfig
 
 
@@ -65,9 +65,19 @@ def main (model_class_name=None,
                                                     place_model_on_cpu=True,
                                                     run_on_cpu=run_on_cpu)
 
-        face_enhancer_func = MPClassFuncOnDemand(FaceEnhancer, 'enhance',
-                                                    place_model_on_cpu=True,
-                                                    run_on_cpu=run_on_cpu)
+        use_gpen = is_interactive = io.input_bool ("Use GPEN as super resoultion tool? Warning: May be instable, is slower, needs more RAM!", False)                                       
+        
+        if not use_gpen:
+            face_enhancer_func = MPClassFuncOnDemand(FaceEnhancer, 'enhance',
+                                                   place_model_on_cpu=True,
+                                                   run_on_cpu=run_on_cpu)
+        else:
+        
+            face_enhancer_func = MPClassFuncOnDemand(GPEN.FaceGAN, 'process',
+                                                        size=512, model='GPEN-BFR-512')
+                                                    
+            #facegan = GPEN.FaceGAN(size=512, model='GPEN-BFR-512')                                 
+            #face_enhancer_func = facegan.process
 
         is_interactive = io.input_bool ("Use interactive merger?", True) if not io.is_colab() else False
 

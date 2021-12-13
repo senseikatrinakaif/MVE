@@ -12,3 +12,4 @@ tf2onnx==1.9.3
 tensorboardX
 crc32c
 jsonschema
+onnxruntime>=0.4.0
