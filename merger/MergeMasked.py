@@ -92,7 +92,8 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
         prd_face_bgr_unchanged = prd_face_bgr.copy()
 
     if cfg.super_resolution_power != 0:
-        prd_face_bgr_enhanced = face_enhancer_func(prd_face_bgr, is_tanh=True, preserve_size=False)
+        prd_face_bgr_enhanced = face_enhancer_func(prd_face_bgr*255., output_size)/255. # convert to img val
+        prd_face_bgr_enhanced = prd_face_bgr_enhanced.astype('float32') # sot-m fix
         mod = cfg.super_resolution_power / 100.0
         prd_face_bgr = cv2.resize(prd_face_bgr, (output_size,output_size))*(1.0-mod) + prd_face_bgr_enhanced*mod
         prd_face_bgr = np.clip(prd_face_bgr, 0, 1)
