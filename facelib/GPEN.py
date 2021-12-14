@@ -63,10 +63,9 @@ class FaceGAN(object):
         self.ort_session = onnxruntime.InferenceSession(self.onnxfile, so)
             
    
-    def process(self, img, output_size=None):
+    def process(self, img, output_size=None, is_tanh=True, preserve_size=False):
         img = cv2.resize(img, (self.resolution, self.resolution))
                 
-        img = img/255.
         img = img - 0.5
         img = img / 0.5 
         img = np.transpose(img, (2,0,1))
@@ -83,11 +82,8 @@ class FaceGAN(object):
         out = np.squeeze(out, 0)
         out = np.transpose(out, (1,2,0))
         out = np.flip(out, 2).copy()
-        out = np.clip(out, 0., 1.) * 255.0
-        out = out.astype(np.uint8)
-                    
-        if output_size is not None:
-            out = cv2.resize(out, (output_size, output_size))
+        out = np.clip(out, 0., 1.)
+        out = out.astype("float32")
         
         return out
         
