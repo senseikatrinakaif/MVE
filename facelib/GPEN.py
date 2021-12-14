@@ -63,18 +63,18 @@ class FaceGAN(object):
         self.ort_session = onnxruntime.InferenceSession(self.onnxfile, so)
             
    
-    def process(self, img, output_size=None, is_tanh=True, preserve_size=False):
-        img = cv2.resize(img, (self.resolution, self.resolution))
+    def process(self, img, output_size=None, is_tanh=True, preserve_size=False, quadruple=True):
+        img_in = cv2.resize(img, (self.resolution, self.resolution))
                 
-        img = img - 0.5
-        img = img / 0.5 
-        img = np.transpose(img, (2,0,1))
-        img = np.expand_dims(img, 0)
-        img = np.flip(img, 1).copy()
+        img_in = img_in - 0.5
+        img_in = img_in / 0.5 
+        img_in = np.transpose(img_in, (2,0,1))
+        img_in = np.expand_dims(img_in, 0)
+        img_in = np.flip(img_in, 1).copy()
         
-        ort_inputs = {self.ort_session.get_inputs()[0].name: img }
+        ort_inputs = {self.ort_session.get_inputs()[0].name: img_in }
         ort_outs = self.ort_session.run(None, ort_inputs)
-        del img
+        del img_in
 
         out = ort_outs[0]
         out = out * 0.5 
@@ -84,6 +84,10 @@ class FaceGAN(object):
         out = np.flip(out, 2).copy()
         out = np.clip(out, 0., 1.)
         out = out.astype("float32")
+        if quadruple:
+            w, h, c = img.shape
+            out = cv2.resize(out, (w*4,h*4)) #dfl merger workaround 
+
         
         return out
         
