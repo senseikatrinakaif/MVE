@@ -615,41 +615,14 @@ def main(**kwargs):
 
             if update_preview:
                 update_preview = False
-
-                selected_preview_name = previews[selected_preview][0]
-                selected_preview_rgb = previews[selected_preview][1]
-                (h, w, c) = selected_preview_rgb.shape
-
-                # HEAD
-                head_lines = [
-                    '[s]:save [b]:backup [enter]:exit',
-                    '[p]:update [space]:next preview [l]:change history range',
-                    'Preview: "%s" [%d/%d]' % (selected_preview_name, selected_preview + 1, len(previews))
-                ]
-                head_line_height = 15
-                head_height = len(head_lines) * head_line_height
-                head = np.ones((head_height, w, c)) * 0.1
-
-                for i in range(0, len(head_lines)):
-                    t = i * head_line_height
-                    b = (i + 1) * head_line_height
-                    head[t:b, 0:w] += imagelib.get_text_image((head_line_height, w, c), head_lines[i], color=[0.8] * c)
-
-                final = head
-
-                if loss_history is not None:
-                    if show_last_history_iters_count == 0:
-                        loss_history_to_show = loss_history
-                    else:
-                        loss_history_to_show = loss_history[-show_last_history_iters_count:]
-
-                    lh_img = models.ModelBase.get_loss_history_preview(loss_history_to_show, iter, w, c)
-                    final = np.concatenate([final, lh_img], axis=0)
-
-                final = np.concatenate([final, selected_preview_rgb], axis=0)
-                final = np.clip(final, 0, 1)
-
-                io.show_image(wnd_name, (final * 255).astype(np.uint8))
+                final = create_preview_pane_image(previews,
+                                                               selected_preview,
+                                                               loss_history,
+                                                               show_last_history_iters_count,
+                                                               iter,
+                                                               batch_size,
+                                                               zoom)
+                io.show_image(wnd_name, final)
                 is_showing = True
 
             key_events = io.get_key_events(wnd_name)
@@ -681,6 +654,13 @@ def main(**kwargs):
             elif key == ord(' '):
                 selected_preview = (selected_preview + 1) % len(previews)
                 update_preview = True
+            elif key == ord('+'):
+                zoom = zoom.next()
+                update_preview = True
+            elif key == ord('-'):
+                zoom = zoom.prev()
+                update_preview = True
+                
 
             try:
                 io.process_messages(0.1)
