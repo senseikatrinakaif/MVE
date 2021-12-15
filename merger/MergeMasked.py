@@ -24,7 +24,10 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
     mask_subres_size = input_size*4
     output_size = input_size
     if cfg.super_resolution_power != 0:
-        output_size *= 4
+        if cfg.gpen and input_size<512:
+            output_size = 512
+        else:
+            output_size *= 4
 
     if cfg.face_type == FaceType.CUSTOM:
         # resize
@@ -63,10 +66,11 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
     
     
     if cfg.pre_sharpen_mode > 0 and cfg.pre_sharpen_power != 0:
+        pre_sharpen_amount = cfg.pre_sharpen_power * (1 if cfg.super_resolution_power==0 else max(2, output_size/input_size))
         if cfg.pre_sharpen_mode==1:
-            dst_face_bgr = imagelib.gaussian_sharpen(dst_face_bgr, amount=cfg.pre_sharpen_power)
+            dst_face_bgr = imagelib.gaussian_sharpen(dst_face_bgr, amount=pre_sharpen_amount)
         elif cfg.pre_sharpen_mode==2:
-            dst_face_bgr = imagelib.unsharpen_mask(dst_face_bgr, amount=cfg.pre_sharpen_power)
+            dst_face_bgr = imagelib.unsharpen_mask(dst_face_bgr, amount=pre_sharpen_amount)
         
         dst_face_bgr = np.clip(dst_face_bgr, 0, 1, out=dst_face_bgr)
 
@@ -92,8 +96,13 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
         prd_face_bgr_unchanged = prd_face_bgr.copy()
 
     if cfg.super_resolution_power != 0:
-        prd_face_bgr_enhanced = face_enhancer_func(prd_face_bgr, is_tanh=True, preserve_size=False)
         mod = cfg.super_resolution_power / 100.0
+        if cfg.gpen:
+            prd_face_bgr_enhanced = face_enhancer_func(prd_face_bgr, preserve_size=False)
+            #prd_face_bgr = prd_face_bgr*(1.0-mod) + prd_face_bgr_enhanced*mod
+        else:
+           prd_face_bgr_enhanced = face_enhancer_func(prd_face_bgr, is_tanh=True, preserve_size=False)
+        
         prd_face_bgr = cv2.resize(prd_face_bgr, (output_size,output_size))*(1.0-mod) + prd_face_bgr_enhanced*mod
         prd_face_bgr = np.clip(prd_face_bgr, 0, 1)
 

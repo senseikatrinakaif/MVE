@@ -74,6 +74,7 @@ def main (model_class_name=None,
 
 
         if use_gpen:
+            cfg.gpen = True
             face_enhancer_func = MPClassFuncOnDemand(GPEN.FaceGAN, 'process',
                                                         size=512, model='GPEN-BFR-512')
                                                     

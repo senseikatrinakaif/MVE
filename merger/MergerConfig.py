@@ -122,6 +122,7 @@ class MergerConfigMasked(MergerConfig):
                        two_pass = False, 
                        morph_power = 100,
                        is_morphable = False,
+                       gpen = False,
                        debug_mode = False,
                        **kwargs
                        ):
@@ -157,6 +158,7 @@ class MergerConfigMasked(MergerConfig):
         self.morph_power = morph_power
         self.is_morphable = is_morphable
         self.debug_mode = debug_mode
+        self.gpen = gpen
 
     def copy(self):
         return copy.copy(self)
@@ -222,7 +224,7 @@ class MergerConfigMasked(MergerConfig):
         self.bicubic_degrade_power = np.clip ( self.bicubic_degrade_power+diff, 0, 100)
         
     def add_pre_sharpen_power(self, diff):
-        self.pre_sharpen_power = np.clip ( self.pre_sharpen_power+diff, 0, 200)
+        self.pre_sharpen_power = np.clip ( self.pre_sharpen_power+diff, 0, 400)
         
     def add_morph_power(self, diff):
         if self.is_morphable:
@@ -302,7 +304,8 @@ class MergerConfigMasked(MergerConfig):
                    self.two_pass == other.two_pass and \
                    self.morph_power == other.morph_power and \
                    self.is_morphable == other.is_morphable and \
-                   self.debug_mode == other.debug_mode 
+                   self.debug_mode == other.debug_mode and \
+                   self.gpen == other.gpen    
 
         return False
 
