@@ -64,8 +64,12 @@ class ModelBase(object):
                     saved_models_names = []
                     for filepath in pathex.get_file_paths(saved_models_path):
                         filepath_name = filepath.name
-                        if filepath_name.endswith(f'{model_class_name}_data.dat'):
-                            saved_models_names += [ (filepath_name.split('_')[0], os.path.getmtime(filepath)) ]
+                        if "DFM" in self.model_class_name:
+                            if filepath_name.endswith(f'{model_class_name}.dfm'):
+                                saved_models_names += [ (filepath_name.split('_DFM')[0], os.path.getmtime(filepath)) ]
+                        else:
+                            if filepath_name.endswith(f'{model_class_name}_data.dat'):
+                                saved_models_names += [ (filepath_name.split('_')[0], os.path.getmtime(filepath)) ]
 
                     # sort by modified datetime
                     saved_models_names = sorted(saved_models_names, key=operator.itemgetter(1), reverse=True )
@@ -153,6 +157,22 @@ class ModelBase(object):
         # True if user chooses to read options external or internal conf file
         self.read_from_conf = False
         config_error = False
+
+        #skip loading for DFM models 
+        if "DFM" in self.model_name:
+            print(self.model_name) # DEBUG
+            self.face_type = io.input_str ("Enter Face type of DFM", "wf", ['h','mf','f','wf','head', 'custom'], help_message="Half / mid face / full face / whole face / head / custom. Half face has better resolution, but covers less area of cheeks. Mid face is 30% wider than half face. 'Whole face' covers full area of face include forehead. 'head' covers full head, but requires XSeg for src and dst faceset.").lower()
+            
+            if silent_start:
+                self.device_config = nn.DeviceConfig.BestGPU()
+                io.log_info (f"Silent start: choosed device {'CPU' if self.device_config.cpu_only else self.device_config.devices[0].name}")
+            else:
+                self.device_config = nn.DeviceConfig.GPUIndexes( force_gpu_idxs or nn.ask_choose_device_idxs(suggest_best_multi_gpu=True)) \
+                                    if not cpu_only else nn.DeviceConfig.CPU()
+            nn.initialize(self.device_config)
+            self.on_initialize()
+            return
+
         #check if config_training_file mode is enabled
         if config_training_file is not None:
             if not Path(config_training_file).exists():
