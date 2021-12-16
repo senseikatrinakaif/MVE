@@ -12,6 +12,8 @@ from facelib import FaceType, LandmarksProcessor
 is_windows = sys.platform[0:3] == 'win'
 xseg_input_size = 256
 
+img_suffixes = [".png", ".jpg"]
+
 def MergeMaskedFace (predictor_func, predictor_input_shape,
                      face_enhancer_func,
                      xseg_256_extract_func,
@@ -84,8 +86,23 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
     prd_face_mask_a_0     = np.clip (predicted[1], 0, 1.0)
     prd_face_dst_mask_a_0 = np.clip (predicted[2], 0, 1.0)
     
-    
-    
+    if cfg.img_seq_path is not None:
+        for img_suf in img_suffixes:
+        
+            filename = str(Path(dfl_img.get_source_filename()).stem) + img_suf
+            filename_path = Path(cfg.img_seq_path) / Path(filename)
+            
+            if filename_path.exists():
+                prd_face_bgr_loaded = cv2.imread(str(filename_path))
+                prd_face_bgr = prd_face_bgr_loaded.astype(np.float32) / 255.
+                prd_face_bgr = np.clip (prd_face_bgr, 0, 1.0)
+                xh, xw, xc = prd_face_bgr.shape
+                if xh != input_size:
+                    prd_face_bgr = cv2.resize (prd_face_bgr, (input_size, input_size))
+                break
+            else:
+                io.log_info(f"pred for {dfl_img.get_source_filename()} not found")     
+
     if cfg.two_pass:
         predicted_2 = predictor_func (prd_face_bgr, func_morph_factor = 1) if cfg.is_morphable else predictor_func (prd_face_bgr)
         prd_face_bgr = np.clip (predicted_2[0], 0, 1.0)

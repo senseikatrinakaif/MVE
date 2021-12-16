@@ -54,6 +54,16 @@ def main (model_class_name=None,
 
         predictor_func, predictor_input_shape, cfg = model.get_MergerConfig()
 
+        use_img_seq = is_interactive = io.input_bool ("Use image sequence instead of model pred?", False, help_message=f"Use faces from {model.get_strpath_storage_for_file('preds')} instead of (first) model prediction")
+
+        cfg.img_seq_path = None
+        if use_img_seq:
+            img_seq_path = model.get_strpath_storage_for_file("preds") 
+            if not Path(img_seq_path).exists():
+                io.log_err(f"{img_seq_path} does not exists")                    
+            else:
+                cfg.img_seq_path = img_seq_path
+
         # Preparing MP functions
         predictor_func = MPFunc(predictor_func)
 
