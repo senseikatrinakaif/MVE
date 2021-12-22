@@ -233,6 +233,7 @@ class ModelBase(object):
             self.save_config_file(self.config_file_path)
 
         self.session_name = self.options.get('session_name', "")
+        self.save_interval = self.options.get('save_interval', 15)
         self.autobackup_hour = self.options.get('autobackup_hour', 0)
         self.maximum_n_backups = self.options.get('maximum_n_backups', 24)
         self.write_preview_history = self.options.get('write_preview_history', False)
@@ -247,6 +248,8 @@ class ModelBase(object):
 
         self.preview_history_writer = None
         if self.is_training:
+            
+
             self.preview_history_path = self.saved_models_path / ( f'{self.get_model_name()}_history' )
             self.autobackups_path     = self.saved_models_path / ( f'{self.get_model_name()}_autobackups' )
 
@@ -328,6 +331,10 @@ class ModelBase(object):
             return def_opt_val
 
         return def_value
+
+    def ask_save_interval(self, default_value=15):
+        default_save_interval = self.options['save_interval'] = self.load_or_def_option('save_interval', default_value)
+        self.options['save_interval'] = io.input_int(f"Save model weights every N minutes", default_save_interval, add_info="5..180")
 
     def ask_override(self):
         return self.is_training and self.iter != 0 and io.input_in_time ("Press enter in 2 seconds to override model settings.", 5 if io.is_colab() else 2 )

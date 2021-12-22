@@ -8,6 +8,7 @@ basic_param:
   face_type: wf
 model_properties:
   session_name: ''
+  save_interval: 15
   autobackup_hour: 0
   maximum_n_backups: 24
   write_preview_history: false

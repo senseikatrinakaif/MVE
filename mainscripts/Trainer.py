@@ -121,6 +121,7 @@ def trainerThread (s2c, c2s, e,
             shared_state = {'after_save': False}
             loss_string = ""
             save_iter = model.get_iter()
+            save_interval_min = model.save_interval
 
             def model_save():
                 if not debug and not is_reached_goal:

@@ -81,6 +81,7 @@ class SAEHDModel(ModelBase):
         ask_override = False if self.read_from_conf else self.ask_override()
         if self.is_first_run() or ask_override:
             if (self.read_from_conf and not self.config_file_exists) or not self.read_from_conf:
+                self.ask_save_interval()
                 self.ask_session_name()
                 self.ask_autobackup_hour()
                 self.ask_maximum_n_backups()

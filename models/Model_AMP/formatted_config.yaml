@@ -9,6 +9,7 @@ basic_param:
 model_properties:
   morph_factor: 0.5
   session_name: ''
+  save_interval: 15
   autobackup_hour: 0
   maximum_n_backups: 24
   write_preview_history: false
