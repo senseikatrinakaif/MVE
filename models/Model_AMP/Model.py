@@ -64,6 +64,9 @@ class AMPModel(ModelBase):
         default_full_preview       = self.options['force_full_preview'] = self.load_or_def_option('force_full_preview', False)
         default_lr                 = self.options['lr']                 = self.load_or_def_option('lr', 5e-5)
 
+        default_mask_power         = self.options['mask_power']         = self.load_or_def_option('mask_power', 0)
+
+        
         ask_override = False if self.read_from_conf else self.ask_override()
         if self.is_first_run() or ask_override:
             if (self.read_from_conf and not self.config_file_exists) or not self.read_from_conf:
@@ -173,6 +176,7 @@ class AMPModel(ModelBase):
 
 
                 self.options['background_power'] = np.clip ( io.input_number("Background power", default_background_power, add_info="0.0..1.0", help_message="Learn the area outside of the mask. Helps smooth out area near the mask boundaries. Can be used at any time"), 0.0, 1.0 )
+                self.options['mask_power'] = np.clip ( io.input_number("Mask power", default_mask_power, add_info="0.0..1000.0", help_message="Learn the area outside of the mask. Helps smooth out area near the mask boundaries. Can be used at any time"), 0.0, 1000.0 )
 
 
                 self.options['ct_mode'] = io.input_str (f"Color transfer for src faceset", default_ct_mode, ['none','rct','lct','mkl','idt','sot', 'fs-aug'], help_message="Change color distribution of src samples close to dst samples. Try all modes to find the best.")
@@ -218,6 +222,8 @@ class AMPModel(ModelBase):
         mouth_prio = self.options['mouth_prio']
         masked_training = self.options['masked_training'] 
         blur_out_mask = self.options['blur_out_mask'] if masked_training else False
+
+        mask_factor = self.options['mask_power']
 
         ct_mode = self.options['ct_mode']
         if ct_mode == 'none':
@@ -599,6 +605,11 @@ class AMPModel(ModelBase):
                     # Mask loss
                     gpu_src_loss += tf.reduce_mean ( 10*tf.square( gpu_target_srcm_all - gpu_pred_src_srcm ),axis=[1,2,3] )
                     gpu_dst_loss += tf.reduce_mean ( 10*tf.square( gpu_target_dstm_all - gpu_pred_dst_dstm ),axis=[1,2,3] )
+
+                    #mask factor 
+                    if mask_factor > 0:
+                        gpu_src_loss += mask_factor * tf.reduce_mean ( 10*tf.square( gpu_target_srcm_all - gpu_pred_src_srcm ),axis=[1,2,3] )
+                        gpu_dst_loss += mask_factor * tf.reduce_mean ( 10*tf.square( gpu_target_dstm_all - gpu_pred_dst_dstm ),axis=[1,2,3] )
 
                     gpu_src_losses += [gpu_src_loss]
                     gpu_dst_losses += [gpu_dst_loss]
