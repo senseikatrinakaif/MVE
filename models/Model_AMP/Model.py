@@ -400,7 +400,7 @@ class AMPModel(ModelBase):
                 else:
                     lr_cos = 0
                     lr_dropout = 1.0
-                self.G_weights = self.encoder.get_weights() + self.decoder.get_weights()
+                self.G_weights = self.encoder.get_weights() + self.inter_src.get_weights() + self.inter_dst.get_weights() + self.decoder.get_weights()
 
                 OptimizerClass = nn.AdaBelief if adabelief else nn.RMSprop
                 self.src_dst_opt = OptimizerClass(lr=lr, lr_dropout=lr_dropout, clipnorm=clipnorm, name='src_dst_opt')
