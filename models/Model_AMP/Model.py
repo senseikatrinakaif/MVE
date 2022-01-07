@@ -3,6 +3,7 @@ import operator
 from functools import partial
 
 import numpy as np
+import math
 
 from core.interact import interact as io
 from core.leras import nn
@@ -64,6 +65,8 @@ class AMPModel(ModelBase):
         default_full_preview       = self.options['force_full_preview'] = self.load_or_def_option('force_full_preview', False)
         default_lr                 = self.options['lr']                 = self.load_or_def_option('lr', 5e-5)
 
+        default_batch_shift        = self.options['batch_shift']      = self.load_or_def_option('batch_shift', 0)
+
         ask_override = False if self.read_from_conf else self.ask_override()
         if self.is_first_run() or ask_override:
             if (self.read_from_conf and not self.config_file_exists) or not self.read_from_conf:
@@ -80,6 +83,11 @@ class AMPModel(ModelBase):
                 self.ask_random_src_flip()
                 self.ask_random_dst_flip()
                 self.ask_batch_size(8)
+                device_config = nn.getCurrentDeviceConfig()
+                devices = device_config.devices
+                if len(devices)>1 and self.options['batch_size'] > 2:
+                    self.options['batch_shift'] = np.clip ( io.input_int ("For multi gpu only: shift bachtes from gpu:0 to other cards .", default_batch_shift, help_message="Typical fine value is 0.5"), 1, self.options['batch_size']-1 )
+
                 self.options['use_fp16'] = io.input_bool ("Use fp16", default_usefp16, help_message='Increases training/inference speed, reduces model size. Model may crash. Enable it after 1-5k iters.')
                 self.options['cpu_cap'] = np.clip ( io.input_int ("Max cpu cores to use.", default_cpu_cap, add_info="1 - 256", help_message="Typical fine value is 0.5"), 1, 256 )
 
@@ -230,6 +238,9 @@ class AMPModel(ModelBase):
             use_fp16 = io.input_bool ("Export quantized?", False, help_message='Makes the exported model faster. If you have problems, disable this option.')
 
         conv_dtype = tf.float16 if use_fp16 else tf.float32
+
+
+        batch_shift = self.options['batch_shift']
 
         class Downscale(nn.ModelBase):
             def on_build(self, in_ch, out_ch, kernel_size=5 ):
@@ -415,8 +426,29 @@ class AMPModel(ModelBase):
         if self.is_training:
             # Adjust batch size for multiple GPU
             gpu_count = max(1, len(devices) )
+            batch_size =  self.get_batch_size()
             bs_per_gpu = max(1, self.get_batch_size() // gpu_count)
             self.set_batch_size( gpu_count*bs_per_gpu)
+            batch_sizes = [bs_per_gpu for i in range(gpu_count)]
+
+            #try to reduce vram consumption on gpu0
+            if gpu_count > 1 and batch_shift > 0:
+                bs_gpu_0 = max(1, bs_per_gpu - 2)
+                bs_diff = bs_gpu_0 - bs_per_gpu
+                bs_gpu_0 = max(1, bs_per_gpu - batch_shift)
+                bs_diff = bs_per_gpu - bs_gpu_0
+                
+                bs_diff_per_gpu = bs_diff / (gpu_count-1)
+                batch_sizes[0] = bs_gpu_0
+                
+                i = 0
+                while sum(batch_sizes)<batch_size and not sum(batch_sizes)+math.ceil(bs_diff_per_gpu)>batch_size:
+                    i = i % 3   
+                    batch_sizes[i+1] += math.ceil(bs_diff_per_gpu)
+                    i+=1
+                
+                self.set_batch_size(sum(batch_sizes))
+
 
             # Compute losses per GPU
             gpu_pred_src_src_list = []
@@ -444,7 +476,9 @@ class AMPModel(ModelBase):
                 with tf.device( f'/{devices[gpu_id].tf_dev_type}:{gpu_id}' if len(devices) != 0 else f'/CPU:0' ):
                     with tf.device(f'/CPU:0'):
                         # slice on CPU, otherwise all batch data will be transfered to GPU first
-                        batch_slice = slice( gpu_id*bs_per_gpu, (gpu_id+1)*bs_per_gpu )
+                        #batch_slice = slice( gpu_id*bs_per_gpu, (gpu_id+1)*bs_per_gpu )
+                        batch_slice = slice(sum(batch_sizes[:gpu_id]),  sum(batch_sizes[:gpu_id+1]))
+                        
                         gpu_warped_src      = self.warped_src [batch_slice,:,:,:]
                         gpu_warped_dst      = self.warped_dst [batch_slice,:,:,:]
                         gpu_target_src      = self.target_src [batch_slice,:,:,:]
