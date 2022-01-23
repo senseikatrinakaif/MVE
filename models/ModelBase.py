@@ -1,15 +1,16 @@
 import colorsys
 import inspect
-import json
 import multiprocessing
 import operator
 import os
 import pickle
 import shutil
-import tempfile
 import time
 import datetime
 from pathlib import Path
+import yaml
+from jsonschema import validate, ValidationError
+import models
 
 import cv2
 import numpy as np
@@ -35,6 +36,8 @@ class ModelBase(object):
                        cpu_only=False,
                        debug=False,
                        force_model_class_name=None,
+                       config_training_file=None,
+                       auto_gen_config=False,
                        silent_start=False,
                        **kwargs):
         self.is_training = is_training
@@ -44,6 +47,9 @@ class ModelBase(object):
         self.training_data_dst_path = training_data_dst_path
         self.pretraining_data_path = pretraining_data_path
         self.pretrained_model_path = pretrained_model_path
+        self.config_training_file = config_training_file
+        self.auto_gen_config = auto_gen_config
+        self.config_file_path = None
         self.no_preview = no_preview
         self.debug = debug
 
@@ -135,19 +141,58 @@ class ModelBase(object):
 
         self.iter = 0
         self.options = {}
+        self.formatted_dictionary = {}
         self.options_show_override = {}
         self.loss_history = []
         self.sample_for_preview = None
         self.choosed_gpu_indexes = None
 
         model_data = {}
+        # True if yaml conf file exists 
+        self.config_file_exists = False
+        # True if user chooses to read options external or internal conf file
+        self.read_from_conf = False
+        config_error = False
+        #check if config_training_file mode is enabled
+        if config_training_file is not None:
+            if not Path(config_training_file).exists():
+                 io.log_err(f"{config_training_file} does not exists, not using config!")
+            else:
+                self.config_file_path = Path(self.get_strpath_def_conf_file())
+        elif self.auto_gen_config:
+             self.config_file_path = Path(self.get_model_conf_path())
+
+        if self.config_file_path is not None:
+            self.read_from_conf = io.input_bool(
+                f'Do you want to read training options from file?',
+                True,
+                'Read options from configuration file instead of asking one by one each option'
+            ) if not silent_start else True
+
+            # If user decides to read from external or internal conf file
+            if self.read_from_conf:
+                # Try to read dictionary from external of internal yaml file according
+                # to the value of auto_gen_config
+                self.options = self.read_from_config_file(self.config_file_path)
+                # If options dict is empty, options will be loaded from dat file
+                if self.options is None:
+                    io.log_info(f"Config file validation error, check your config")
+                    config_error = True
+                elif not self.options.keys():
+                    io.log_info(f"Configuration file doesn't exist. A standard configuration file will be created.")
+                else:
+                    io.log_info(f"Using config file from {self.config_file_path}")
+                    self.config_file_exists = True
+
         self.model_data_path = Path( self.get_strpath_storage_for_file('data.dat') )
         if self.model_data_path.exists():
             io.log_info (f"Loading {self.model_name} model...")
             model_data = pickle.loads ( self.model_data_path.read_bytes() )
             self.iter = model_data.get('iter',0)
             if self.iter != 0:
-                self.options = model_data['options']
+                # read options from the .dat file only if the user chooses not to read options from the yaml file
+                if not self.config_file_exists:
+                    self.options = model_data['options']
                 self.loss_history = model_data.get('loss_history', [])
                 self.sample_for_preview = model_data.get('sample_for_preview', None)
                 self.choosed_gpu_indexes = model_data.get('choosed_gpu_indexes', None)
@@ -183,6 +228,11 @@ class ModelBase(object):
         if self.is_first_run():
             # save as default options only for first run model initialize
             self.default_options_path.write_bytes( pickle.dumps (self.options) )
+
+        # save config file
+        if self.read_from_conf and not self.config_file_exists and not config_error and not self.config_file_path is None:
+            self.save_config_file(self.config_file_path)
+
         self.session_name = self.options.get('session_name', "")
         self.autobackup_hour = self.options.get('autobackup_hour', 0)
         self.maximum_n_backups = self.options.get('maximum_n_backups', 24)
@@ -364,7 +414,7 @@ class ModelBase(object):
         return ( ('loss_src', 0), ('loss_dst', 0) )
 
     #overridable
-    def onGetPreview(self, sample, for_history=False):
+    def onGetPreview(self, sample, for_history=False, filenames=None):
         #you can return multiple previews
         #return [ ('preview_name',preview_rgb), ... ]
         return []
@@ -382,6 +432,15 @@ class ModelBase(object):
         #return predictor_func, predictor_input_shape, MergerConfig() for the model
         raise NotImplementedError
 
+    #overridable
+    def get_config_schema_path(self):
+        raise NotImplementedError
+
+    #overridable
+    def get_formatted_configuration_path(self):
+        return "None"
+        #raise NotImplementedError
+
     def get_pretraining_data_path(self):
         return self.pretraining_data_path
 
@@ -392,7 +451,10 @@ class ModelBase(object):
         return self.target_iter != 0 and self.iter >= self.target_iter
 
     def get_previews(self):
-        return self.onGetPreview ( self.last_sample )
+        return self.onGetPreview ( self.last_sample, filenames=self.last_sample_filenames )
+    
+    def get_static_previews(self):
+        return self.onGetPreview (self.sample_for_preview)
 
     def get_history_previews(self):
         return self.onGetPreview (self.sample_for_preview, for_history=True)
@@ -410,6 +472,10 @@ class ModelBase(object):
 
         self.onSave()
 
+        if self.auto_gen_config:
+            path = Path(self.get_model_conf_path())
+            self.save_config_file(path)
+
         model_data = {
             'iter': self.iter,
             'options': self.options,
@@ -425,6 +491,81 @@ class ModelBase(object):
             if diff_hour > 0 and diff_hour % self.autobackup_hour == 0:
                 self.autobackup_start_time += self.autobackup_hour*3600
                 self.create_backup()
+
+    def __convert_type_write(self, value):
+        if isinstance(value, (np.int32, np.float64, np.int64)):
+            return value.item()
+        else:
+            return value
+
+    def __update_nested_dict(self, nested_dict, key, val):
+        if key in nested_dict:
+            nested_dict[key] = self.__convert_type_write(val)
+            return True
+        for k, v in nested_dict.items():
+              if isinstance(v, dict):
+                  if self.__update_nested_dict(v, key, val):
+                      return True
+        return False
+
+    def __iterate_read_dict(self, nested_dict, new_dict=None):
+        if new_dict == None:
+            new_dict = {}
+        for k,v in nested_dict.items():
+            if isinstance(v, dict):
+                new_dict.update(self.__iterate_read_dict(v, new_dict))
+            else:            
+                new_dict[k] = v
+        return new_dict
+
+    def read_from_config_file(self, filepath, keep_nested=False, validation=True):
+        """
+        Reads options from configuration yaml file.
+
+        Args:
+            filepath (str|Path): Path where to read configuration file.
+            keep_nested (bool, optional): If false dictionary is keep nested, otherwise not. Defaults to False.
+            validation (bool, optional): If true dictionary is valideted. Defaults to True.
+
+        Returns:
+            [dict]: A dictionary of options.
+        """
+        #fun = self.get_strpath_configuration_path if not auto_gen else self.get_model_conf_path
+        data = {}
+        try:
+            with open(filepath, 'r') as file, open(self.get_config_schema_path(), 'r') as schema:
+                data = yaml.safe_load(file)
+                if not keep_nested:
+                    data = self.__iterate_read_dict(data)
+                if validation:
+                    validate(data, yaml.safe_load(schema))
+        except FileNotFoundError:
+            return {}
+        except ValidationError as ve:
+            io.log_err(f"{ve}")
+            return None
+
+        return data
+
+    def save_config_file(self, filepath):
+        """
+        Saves options to configuration yaml file
+
+        Args:
+            filepath (str|Path): Path where to save configuration file.
+        """
+
+        formatted_dict = self.read_from_config_file(self.get_formatted_configuration_path(), keep_nested=True, validation=False)
+
+        for key, value in self.options.items():
+            if not self.__update_nested_dict(formatted_dict, key, value):
+                formatted_dict[key] = self.__convert_type_write(value)
+
+        try:
+            with open(filepath, 'w') as file:
+                yaml.dump(formatted_dict, file, sort_keys=False)
+        except OSError as exception:
+            io.log_info('Impossible to write YAML configuration file -> ', exception)
 
     def create_backup(self):
         io.log_info ("Creating backup...", end='\r')
@@ -473,12 +614,19 @@ class ModelBase(object):
 
     def generate_next_samples(self):
         sample = []
+        sample_filenames = []
         for generator in self.generator_list:
             if generator.is_initialized():
-                sample.append ( generator.generate_next() )
+                batch = generator.generate_next()
+                if type(batch) is tuple:
+                    sample.append ( batch[0] )
+                    sample_filenames.append( batch[1] )
+                else:
+                    sample.append ( batch )
             else:
                 sample.append ( [] )
         self.last_sample = sample
+        self.last_sample_filenames = sample_filenames
         return sample
 
     #overridable
@@ -558,8 +706,21 @@ class ModelBase(object):
     def get_strpath_storage_for_file(self, filename):
         return str( self.saved_models_path / ( self.get_model_name() + '_' + filename) )
 
+    def get_strpath_configuration_path(self):
+        return str(self.config_file_path)
+
+    def get_strpath_def_conf_file(self):
+        if Path(self.config_training_file).is_file():
+            return str(Path(self.config_training_file))
+        elif Path(self.config_training_file).is_dir(): #left for workspace bat backwards compatibility 
+            return str(Path(self.config_training_file) / 'def_conf_file.yaml')
+        else: return None
+            
     def get_summary_path(self):
         return self.get_strpath_storage_for_file('summary.txt')
+
+    def get_model_conf_path(self):
+        return self.get_strpath_storage_for_file('configuration_file.yaml')
 
     def get_summary_text(self):
         visible_options = self.options.copy()

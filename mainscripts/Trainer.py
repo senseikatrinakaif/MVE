@@ -25,13 +25,17 @@ class TensorBoardTool:
     def run(self):
         from tensorboard import default
         from tensorboard import program
+        from tensorboard import version as tb_version
         # remove http messages
         log = logging.getLogger('werkzeug').setLevel(logging.ERROR)
         # Start tensorboard server
         tb = program.TensorBoard(default.get_plugins())
-        tb.configure(argv=[None, '--logdir', self.dir_path, '--port', '6006', '--bind_all'])
+        tb_argv = [None, '--logdir', self.dir_path, '--port', '6006']
+        if int(tb_version.VERSION[0])>=2:
+            tb_argv.append("--bind_all")
+        tb.configure(argv=tb_argv)
         url = tb.launch()
-        print('Launched TensorBoard at {}'.format(url))
+        io.log_info('Launched TensorBoard at {}\n'.format(url))
 
 def process_img_for_tensorboard(input_img):
     # convert format from bgr to rgb
@@ -67,6 +71,7 @@ def trainerThread (s2c, c2s, e,
                     debug=False,
                     tensorboard_dir=None,
                     start_tensorboard=False,
+                    config_training_file=None,
                     dump_ckpt=False,
                     **kwargs):
     while True:
@@ -97,6 +102,8 @@ def trainerThread (s2c, c2s, e,
                         force_gpu_idxs=force_gpu_idxs,
                         cpu_only=cpu_only,
                         silent_start=silent_start,
+                        config_training_file=config_training_file,
+                        auto_gen_config=kwargs.get("auto_gen_config", False),
                         debug=debug)
 
             is_reached_goal = model.is_reached_iter_goal()
@@ -124,6 +131,25 @@ def trainerThread (s2c, c2s, e,
             def model_backup():
                 if not debug and not is_reached_goal:
                     model.create_backup()
+                    
+            def log_step(step, step_time, src_loss, dst_loss):
+                c2s.put({ 
+                    'op': 'tb', 
+                    'action': 'step', 
+                    'step': step,
+                    'step_time': step_time,
+                    'src_loss': src_loss,
+                    'dst_loss': dst_loss
+                })
+            
+            def log_previews(step, previews, static_previews):
+                c2s.put({
+                    'op': 'tb',
+                    'action': 'preview',
+                    'step': step,
+                    'previews': previews,
+                    'static_previews': static_previews
+                })
 
             def send_preview():
                 if not debug:
@@ -322,8 +348,7 @@ def handle_tensorboard_op(input):
                 log_tensorboard_previews(step, previews, 'preview', train_summary_writer)
             if static_previews is not None:
                 log_tensorboard_previews(step, static_previews, 'static_preview', train_summary_writer)
-    c2s.put({'op': 'close'})
-
+    
 
 class Zoom(Enum):
     ZOOM_25 = (1 / 4, '25%')
@@ -584,7 +609,7 @@ def main(**kwargs):
                         selected_preview = selected_preview % len(previews)
                         update_preview = True
                 elif op == 'tb':
-                    handle_tensorboard_op(input)
+                    handle_tensorboard_op(item)
                 elif op == 'close':
                     break
 

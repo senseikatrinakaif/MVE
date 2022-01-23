@@ -92,13 +92,13 @@ if __name__ == "__main__":
         if arguments.pack_faceset:
             io.log_info ("Performing faceset packing...\r\n")
             from samplelib import PackedFaceset
-            PackedFaceset.pack( Path(arguments.input_dir) )
+            PackedFaceset.pack( Path(arguments.input_dir), ext=arguments.archive_type)
 
         if arguments.unpack_faceset:
             io.log_info ("Performing faceset unpacking...\r\n")
             from samplelib import PackedFaceset
             PackedFaceset.unpack( Path(arguments.input_dir) )
-
+            
     p = subparsers.add_parser( "util", help="Utilities.")
     p.add_argument('--input-dir', required=True, action=fixPathAction, dest="input_dir", help="Input directory. A directory containing the files you wish to process.")
     p.add_argument('--add-landmarks-debug-images', action="store_true", dest="add_landmarks_debug_images", default=False, help="Add landmarks debug image for aligned faces.")
@@ -107,6 +107,7 @@ if __name__ == "__main__":
     p.add_argument('--restore-faceset-metadata', action="store_true", dest="restore_faceset_metadata", default=False, help="Restore faceset metadata to file. Image filenames must be the same as used with save.")
     p.add_argument('--pack-faceset', action="store_true", dest="pack_faceset", default=False, help="")
     p.add_argument('--unpack-faceset', action="store_true", dest="unpack_faceset", default=False, help="")
+    p.add_argument('--archive-type', dest="archive_type", choices=['zip', 'pak'], default=None)
 
     p.set_defaults (func=process_util)
 
@@ -131,6 +132,8 @@ if __name__ == "__main__":
                   'start_tensorboard'        : arguments.start_tensorboard,
                   'dump_ckpt'                : arguments.dump_ckpt,
                   'flask_preview'            : arguments.flask_preview,
+                  'config_training_file'     : arguments.config_training_file,
+                  'auto_gen_config'          : arguments.auto_gen_config
                   }
         from mainscripts import Trainer
         Trainer.main(**kwargs)
@@ -150,6 +153,8 @@ if __name__ == "__main__":
     p.add_argument('--silent-start', action="store_true", dest="silent_start", default=False, help="Silent start. Automatically chooses Best GPU and last used model.")
     p.add_argument('--tensorboard-logdir', action=fixPathAction, dest="tensorboard_dir", help="Directory of the tensorboard output files")
     p.add_argument('--start-tensorboard', action="store_true", dest="start_tensorboard", default=False, help="Automatically start the tensorboard server preconfigured to the tensorboard-logdir")
+    p.add_argument('--config-training-file', action=fixPathAction, dest="config_training_file", help="Path to custom yaml configuration file")
+    p.add_argument('--auto-gen-config', action="store_true", dest="auto_gen_config", default=False, help="Saves a configuration file for each model used in the trainer. It'll have the same model name")
     
 
     p.add_argument('--dump-ckpt', action="store_true", dest="dump_ckpt", default=False, help="Dump the model to ckpt format.")
@@ -359,6 +364,9 @@ if __name__ == "__main__":
         parser.print_help()
         exit(0)
     parser.set_defaults(func=bad_args)
+
+    from utils.logo import print_community_info
+    print_community_info()
 
     arguments = parser.parse_args()
     arguments.func(arguments)
