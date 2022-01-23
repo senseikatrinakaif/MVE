@@ -183,6 +183,16 @@ if __name__ == "__main__":
     p.add_argument('--model-dir', required=True, action=fixPathAction, dest="model_dir", help="Saved models dir.")
     p.add_argument('--model', required=True, dest="model_name", choices=pathex.get_all_dir_names_startswith ( Path(__file__).parent / 'models' , 'Model_'), help="Model class name.")
     p.set_defaults (func=process_exportdfm)
+
+    def process_convertweights(arguments):
+        osex.set_process_lowest_prio()
+        from mainscripts import WeightsConverter
+        WeightsConverter.main(model_class_name = arguments.model_name, saved_models_path = Path(arguments.model_dir))
+
+    p = subparsers.add_parser( "convertweights", help="Converts weights to vanilla dfl format.")
+    p.add_argument('--model-dir', required=True, action=fixPathAction, dest="model_dir", help="Saved models dir.")
+    p.add_argument('--model', required=True, dest="model_name", choices=pathex.get_all_dir_names_startswith ( Path(__file__).parent / 'models' , 'Model_'), help="Model class name.")
+    p.set_defaults (func=process_convertweights)
     
     def process_merge(arguments):
         osex.set_process_lowest_prio()

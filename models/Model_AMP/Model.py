@@ -63,7 +63,7 @@ class AMPModel(ModelBase):
         default_preview_samples    = self.options['preview_samples']    = self.load_or_def_option('preview_samples', 4)
         default_full_preview       = self.options['force_full_preview'] = self.load_or_def_option('force_full_preview', False)
         default_lr                 = self.options['lr']                 = self.load_or_def_option('lr', 5e-5)
-        default_alernative_save    = self.options['alernative_save']    = self.load_or_def_option('alernative_save', False)
+        default_alernative_save    = self.options['alternative_save']    = self.load_or_def_option('alternative_save', False)
 
 
 
@@ -85,7 +85,7 @@ class AMPModel(ModelBase):
                 self.ask_batch_size(8)
                 self.options['use_fp16'] = io.input_bool ("Use fp16", default_usefp16, help_message='Increases training/inference speed, reduces model size. Model may crash. Enable it after 1-5k iters.')
                 self.options['cpu_cap'] = np.clip ( io.input_int ("Max cpu cores to use.", default_cpu_cap, add_info="1 - 256", help_message="Typical fine value is 0.5"), 1, 256 )
-                self.options['alernative_save'] = io.input_bool ("Use fp16", default_alernative_save, help_message='Saves weigths with less RAM consumption, not compatible with vanilla dfl (use script to convert)')
+                self.options['alternative_save'] = io.input_bool ("User alternative saving method", default_alernative_save, help_message='Saves weigths with less RAM consumption, not compatible with vanilla dfl (use script to convert)')
 
 
 

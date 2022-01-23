@@ -38,7 +38,7 @@ class Saveable():
 
         nn.batch_set_value (tuples)
 
-    def save_weights(self, filename, force_dtype=None, multi_pickle=False):
+    def save_weights(self, filename, force_dtype=None, alternative_save=False):
         d = {}
         weights = self.get_weights()
 
@@ -59,24 +59,20 @@ class Saveable():
 
             if force_dtype is not None:
                 w_val = w_val.astype(force_dtype)
-            if multi_pickle:
+            if alternative_save:
                 with open(p_tmp, 'wb') as tmp_file:
                     pickle.dump(w_val, tmp_file, 4)
             else:    
                 d[ w_name_split[1] ] = w_val
         del w_val
 
-        if not multi_pickle:
-            with open(p_tmp, 'wb') as tmp_file:
-                pickle.dump(d, tmp_file, 4)
-            del d 
+        if alternative_save:
+            if p.exists():
+                p.unlink()
+            p_tmp.rename (p)
 
-        if p.exists():
-            p.unlink()
-        p_tmp.rename (p)
-
-        # d_dumped = pickle.dumps (d, 4)
-        # pathex.write_bytes_safe ( Path(filename), d_dumped )
+        d_dumped = pickle.dumps (d, 4)
+        pathex.write_bytes_safe ( Path(filename), d_dumped )
 
     def load_weights(self, filename):
         """
@@ -85,14 +81,14 @@ class Saveable():
         filepath = Path(filename)
         if filepath.exists():
             result = True
-            d_dumped = filepath.read_bytes()
+            with open(filepath, 'rb') as fr:
             #load multipickled obj
-            d = dict()
-            try:
-                while True:
-                    d.update(pickle.loads(d_dumped))
-            except EOFError:
-                pass
+                d = dict()
+                try:
+                    while True:
+                        d.update(pickle.load(fr))
+                except EOFError:
+                    pass
         else:
             return False
 
