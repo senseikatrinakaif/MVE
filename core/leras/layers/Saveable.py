@@ -38,7 +38,7 @@ class Saveable():
 
         nn.batch_set_value (tuples)
 
-    def save_weights(self, filename, force_dtype=None):
+    def save_weights(self, filename, force_dtype=None, multi_pickle=False):
         d = {}
         weights = self.get_weights()
 
@@ -46,6 +46,10 @@ class Saveable():
             raise Exception("name must be defined.")
 
         name = self.name
+
+        #workaround 
+        p = Path(filename)
+        p_tmp = p.parent / (p.name + '.tmp')
 
         for w in weights:
             w_val = nn.tf_sess.run (w).copy()
@@ -55,15 +59,18 @@ class Saveable():
 
             if force_dtype is not None:
                 w_val = w_val.astype(force_dtype)
-
-            d[ w_name_split[1] ] = w_val
+            if multi_pickle:
+                with open(p_tmp, 'wb') as tmp_file:
+                    pickle.dump(w_val, tmp_file, 4)
+            else:    
+                d[ w_name_split[1] ] = w_val
         del w_val
-        #workaround 
-        p = Path(filename)
-        p_tmp = p.parent / (p.name + '.tmp')
-        with open(p_tmp, 'wb') as tmp_file:
-            pickle.dump(d, tmp_file, 4)
-        del d 
+
+        if not multi_pickle:
+            with open(p_tmp, 'wb') as tmp_file:
+                pickle.dump(d, tmp_file, 4)
+            del d 
+
         if p.exists():
             p.unlink()
         p_tmp.rename (p)
@@ -79,7 +86,13 @@ class Saveable():
         if filepath.exists():
             result = True
             d_dumped = filepath.read_bytes()
-            d = pickle.loads(d_dumped)
+            #load multipickled obj
+            d = dict()
+            try:
+                while True:
+                    d.update(pickle.loads(d_dumped))
+            except EOFError:
+                pass
         else:
             return False
 

@@ -33,6 +33,7 @@ model_properties:
   bg_style_power: 0.0
   eyes_mouth_prio: false
   cpu_cap: 8
+  alternative_save: false
   preview_samples: 4
   force_full_preview: false
   gan properties:
