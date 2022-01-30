@@ -1,7 +1,7 @@
 from pathlib import Path
 from os import scandir
 
-image_extensions = [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
+image_extensions = [".jpg", ".jpeg", ".png", ".tif", ".tiff", ".png"]
 
 def write_bytes_safe(p, bytes_data):
     """

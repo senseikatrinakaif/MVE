@@ -72,6 +72,10 @@ def restore_faceset_metadata_folder(input_path):
             dflimg = DFLJPG.load(filepath)
             dflimg.set_dict(dfl_dict)
             dflimg.save()
+        elif filepath.suffix == '.png':
+            dflimg = DFLPNG.load(filepath)
+            dflimg.set_dict(dfl_dict)
+            dflimg.save()
         else:
             continue
 
