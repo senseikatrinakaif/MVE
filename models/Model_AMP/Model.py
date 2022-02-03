@@ -613,7 +613,7 @@ class AMPModel(ModelBase):
                         gpu_pred_src_src_d, gpu_pred_src_src_d2 = self.GAN(gpu_pred_src_src_masked)
 
                         def get_smooth_noisy_labels(label, tensor, smoothing=0.1, noise=0.05):
-                            num_labels = self.batch_size
+                            num_labels = bs_per_gpu
                             for d in tensor.get_shape().as_list()[1:]:
                                 num_labels *= d
 
@@ -622,7 +622,7 @@ class AMPModel(ModelBase):
                             x = tf.cast(x, tf.float32)
                             x = tf.math.scalar_mul(1-smoothing, x)
                             # x = x + (smoothing/num_labels)
-                            x = tf.reshape(x, (self.batch_size,) + tuple(tensor.get_shape().as_list()[1:]))
+                            x = tf.reshape(x, (num_labels,) + tuple(tensor.get_shape().as_list()[1:]))
                             return x
 
                         smoothing = self.options['gan_smoothing']
