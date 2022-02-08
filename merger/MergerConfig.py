@@ -123,6 +123,7 @@ class MergerConfigMasked(MergerConfig):
                        morph_power = 100,
                        is_morphable = False,
                        debug_mode = False,
+                       force_full_mask = False,
                        **kwargs
                        ):
 
@@ -157,6 +158,7 @@ class MergerConfigMasked(MergerConfig):
         self.morph_power = morph_power
         self.is_morphable = is_morphable
         self.debug_mode = debug_mode
+        self.force_full_mask = force_full_mask
 
     def copy(self):
         return copy.copy(self)
@@ -174,7 +176,9 @@ class MergerConfigMasked(MergerConfig):
         
     def toggle_debug_mode(self):
         self.debug_mode = not self.debug_mode
-        
+
+    def toggle_force_full_mask_mode(self):
+        self.force_full_mask = not self.force_full_mask
                 
     def toggle_sharpen_mode_multi(self, pre_sharpen=False):
         if pre_sharpen:
@@ -251,6 +255,8 @@ class MergerConfigMasked(MergerConfig):
         io.log_info(s)
         self.mask_mode = io.input_int ("", 1, valid_list=mask_mode_dict.keys() )
 
+        self.force_full_mask = io.input_bool("Use full mask for merging?", False)
+
         if 'raw' not in self.mode:
             self.erode_mask_modifier = np.clip ( io.input_int ("Choose erode mask modifier", 0, add_info="-400..400"), -400, 400)
             self.blur_mask_modifier =  np.clip ( io.input_int ("Choose blur mask modifier", 0, add_info="0..400"), 0, 400)
@@ -311,7 +317,8 @@ class MergerConfigMasked(MergerConfig):
                    self.two_pass_mode == other.two_pass_mode and \
                    self.morph_power == other.morph_power and \
                    self.is_morphable == other.is_morphable and \
-                   self.debug_mode == other.debug_mode 
+                   self.debug_mode == other.debug_mode and \
+                   self.force_full_mask == other.force_full_mask
 
         return False
 
@@ -328,6 +335,7 @@ class MergerConfigMasked(MergerConfig):
             r += f"""hist_match_threshold: {self.hist_match_threshold}\n"""
 
         r += f"""mask_mode: { mask_mode_dict[self.mask_mode] }\n"""
+        r += f"""force_full_mask: {self.force_full_mask}\n"""
 
         if 'raw' not in self.mode:
             r += (f"""erode_mask_modifier: {self.erode_mask_modifier}\n"""
@@ -356,6 +364,7 @@ class MergerConfigMasked(MergerConfig):
             r += f"""morph_power: {self.morph_power}\n"""
         #r += f"""is_morphable: {self.is_morphable}\n"""
         r += f"""debug_mode: {self.debug_mode}\n"""
+       
         
         r += "================"
 

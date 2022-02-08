@@ -281,7 +281,23 @@ def MergeMaskedFace (predictor_func, predictor_input_shape,
 
                 cfg_mp = cfg.motion_blur_power / 100.0
 
-                out_img = img_bgr*(1-img_face_mask_a) + (out_img*img_face_mask_a)
+                if cfg.force_full_mask:
+                    wrk_face_mask_a_0 = np.ones_like(dst_face_mask_a_0)
+                    #wrk_face_mask_a_0 = np.pad (wrk_face_mask_a_0, input_size)
+
+                    wrk_face_mask_a_0[ wrk_face_mask_a_0 < (1.0/255.0) ] = 0.0 # get rid of noise
+
+                    # resize to mask_subres_size
+                    if wrk_face_mask_a_0.shape[0] != mask_subres_size:
+                        wrk_face_mask_a_0 = cv2.resize (wrk_face_mask_a_0, (mask_subres_size, mask_subres_size), interpolation=cv2.INTER_CUBIC)
+
+                    img_face_mask_a = cv2.warpAffine( wrk_face_mask_a_0, face_mask_output_mat, img_size, np.zeros(img_bgr.shape[0:2], dtype=np.float32), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_CUBIC )[...,None]
+                    img_face_mask_a = np.clip (img_face_mask_a, 0.0, 1.0)
+                    
+                    out_merging_mask_a = img_face_mask_a
+                    out_img = img_bgr*(1-img_face_mask_a) + (out_img*img_face_mask_a)
+                else:
+                    out_img = img_bgr*(1-img_face_mask_a) + (out_img*img_face_mask_a)
 
                 if ('seamless' in cfg.mode and cfg.color_transfer_mode != 0) or \
                    cfg.mode == 'seamless-hist-match' or \
