@@ -1,4 +1,5 @@
 import os
+from re import T
 import sys
 import traceback
 import queue
@@ -54,6 +55,41 @@ def log_tensorboard_model_previews(iter, model, train_summary_writer):
     log_tensorboard_previews(iter, model.get_previews(), 'preview', train_summary_writer)
     log_tensorboard_previews(iter, model.get_static_previews(), 'static_preview', train_summary_writer)
 
+def load_model( model_class_name,
+                is_training,
+                saved_models_path,
+                training_data_src_path,
+                training_data_dst_path,
+                pretraining_data_path,
+                pretrained_model_path,
+                no_preview,
+                force_model_name,
+                force_gpu_idxs,
+                cpu_only,
+                silent_start,
+                config_training_file,
+                auto_gen_config,
+                debug,
+                **kwargs
+            ):
+    return models.import_model(model_class_name)(
+        is_training=True,
+        saved_models_path=saved_models_path,
+        training_data_src_path=training_data_src_path,
+        training_data_dst_path=training_data_dst_path,
+        pretraining_data_path=pretraining_data_path,
+        pretrained_model_path=pretrained_model_path,
+        no_preview=no_preview,
+        force_model_name=force_model_name,
+        force_gpu_idxs=force_gpu_idxs,
+        cpu_only=cpu_only,
+        silent_start=silent_start,
+        config_training_file=config_training_file,
+        auto_gen_config=auto_gen_config,
+        debug=debug
+    )
+
+
 def trainerThread (s2c, c2s, e,
                     socketio=None,
                     model_class_name = None,
@@ -89,22 +125,24 @@ def trainerThread (s2c, c2s, e,
 
             if not saved_models_path.exists():
                 saved_models_path.mkdir(exist_ok=True, parents=True)
-                            
-            model = models.import_model(model_class_name)(
-                        is_training=True,
-                        saved_models_path=saved_models_path,
-                        training_data_src_path=training_data_src_path,
-                        training_data_dst_path=training_data_dst_path,
-                        pretraining_data_path=pretraining_data_path,
-                        pretrained_model_path=pretrained_model_path,
-                        no_preview=no_preview,
-                        force_model_name=force_model_name,
-                        force_gpu_idxs=force_gpu_idxs,
-                        cpu_only=cpu_only,
-                        silent_start=silent_start,
-                        config_training_file=config_training_file,
-                        auto_gen_config=kwargs.get("auto_gen_config", False),
-                        debug=debug)
+
+            model = load_model(
+                model_class_name,
+                is_training=True,
+                saved_models_path=saved_models_path,
+                training_data_src_path=training_data_src_path,
+                training_data_dst_path=training_data_dst_path,
+                pretraining_data_path=pretraining_data_path,
+                pretrained_model_path=pretrained_model_path,
+                no_preview=no_preview,
+                force_model_name=force_model_name,
+                force_gpu_idxs=force_gpu_idxs,
+                cpu_only=cpu_only,
+                silent_start=silent_start,
+                config_training_file=config_training_file,
+                auto_gen_config=kwargs.get("auto_gen_config", False),
+                debug=debug
+            )
 
             is_reached_goal = model.is_reached_iter_goal()
 
@@ -174,85 +212,116 @@ def trainerThread (s2c, c2s, e,
             last_preview_time = time.time()
 
             execute_programs = [[x[0], x[1], time.time()] for x in execute_programs]
+            is_just_resumed = is_just_paused = is_paused = False
 
             for i in itertools.count(0, 1):
                 if not debug:
-                    cur_time = time.time()
+                    if not is_paused:
+                        if is_just_resumed:
+                            if model is None:
+                                model = load_model(
+                                    model_class_name,
+                                    is_training=True,
+                                    saved_models_path=saved_models_path,
+                                    training_data_src_path=training_data_src_path,
+                                    training_data_dst_path=training_data_dst_path,
+                                    pretraining_data_path=pretraining_data_path,
+                                    pretrained_model_path=pretrained_model_path,
+                                    no_preview=no_preview,
+                                    force_model_name=force_model_name,
+                                    force_gpu_idxs=force_gpu_idxs,
+                                    cpu_only=cpu_only,
+                                    silent_start=silent_start,
+                                    config_training_file=config_training_file,
+                                    auto_gen_config=kwargs.get("auto_gen_config", False),
+                                    debug=debug
+                                )
+                                save_iter = model.get_iter()
+                                is_reached_goal = model.is_reached_iter_goal()
 
-                    for x in execute_programs:
-                        prog_time, prog, last_time = x
-                        exec_prog = False
-                        if 0 < prog_time <= (cur_time - start_time):
-                            x[0] = 0
-                            exec_prog = True
-                        elif prog_time < 0 and (cur_time - last_time) >= -prog_time:
-                            x[2] = cur_time
-                            exec_prog = True
+                        cur_time = time.time()
 
-                        if exec_prog:
-                            try:
-                                exec(prog)
-                            except Exception as e:
-                                print("Unable to execute program: %s" % prog)
+                        for x in execute_programs:
+                            prog_time, prog, last_time = x
+                            exec_prog = False
+                            if 0 < prog_time <= (cur_time - start_time):
+                                x[0] = 0
+                                exec_prog = True
+                            elif prog_time < 0 and (cur_time - last_time) >= -prog_time:
+                                x[2] = cur_time
+                                exec_prog = True
 
-                    if not is_reached_goal:
+                            if exec_prog:
+                                try:
+                                    exec(prog)
+                                except Exception as e:
+                                    print("Unable to execute program: %s" % prog)
 
-                        if model.get_iter() == 0:
-                            io.log_info("")
-                            io.log_info(
-                                "Trying to do the first iteration. If an error occurs, reduce the model parameters.")
-                            io.log_info("")
+                        if not is_reached_goal:
 
-                            if sys.platform[0:3] == 'win':
-                                io.log_info("!!!")
+                            if model.get_iter() == 0:
+                                io.log_info("")
                                 io.log_info(
-                                    "Windows 10 users IMPORTANT notice. You should set this setting in order to work correctly.")
-                                io.log_info("https://i.imgur.com/B7cmDCB.jpg")
-                                io.log_info("!!!")
+                                    "Trying to do the first iteration. If an error occurs, reduce the model parameters.")
+                                io.log_info("")
 
-                        iter, iter_time = model.train_one_iter()
+                                if sys.platform[0:3] == 'win':
+                                    io.log_info("!!!")
+                                    io.log_info(
+                                        "Windows 10 users IMPORTANT notice. You should set this setting in order to work correctly.")
+                                    io.log_info("https://i.imgur.com/B7cmDCB.jpg")
+                                    io.log_info("!!!")
 
-                        loss_history = model.get_loss_history()
-                        time_str = time.strftime("[%H:%M:%S]")
-                        if iter_time >= 10:
-                            loss_string = "{0}[#{1:06d}][{2:.5s}s]".format(time_str, iter, '{:0.4f}'.format(iter_time))
-                        else:
-                            loss_string = "{0}[#{1:06d}][{2:04d}ms]".format(time_str, iter, int(iter_time * 1000))
+                            iter, iter_time = model.train_one_iter()
 
-                        if shared_state['after_save']:
-                            shared_state['after_save'] = False
-
-                            mean_loss = np.mean(loss_history[save_iter:iter], axis=0)
-
-                            for loss_value in mean_loss:
-                                loss_string += "[%.4f]" % (loss_value)
-
-                            io.log_info(loss_string)
-
-                            save_iter = iter
-                        else:
-                            for loss_value in loss_history[-1]:
-                                loss_string += "[%.4f]" % (loss_value)
-
-                            if io.is_colab():
-                                io.log_info('\r' + loss_string, end='')
+                            loss_history = model.get_loss_history()
+                            time_str = time.strftime("[%H:%M:%S]")
+                            if iter_time >= 10:
+                                loss_string = "{0}[#{1:06d}][{2:.5s}s]".format(time_str, iter, '{:0.4f}'.format(iter_time))
                             else:
-                                io.log_info(loss_string, end='\r')
+                                loss_string = "{0}[#{1:06d}][{2:04d}ms]".format(time_str, iter, int(iter_time * 1000))
 
-                        if socketio is not None:
-                            socketio.emit('loss', loss_string)
+                            if shared_state['after_save']:
+                                shared_state['after_save'] = False
 
-                        loss_entry = loss_history[-1]
-                        log_step(iter, iter_time, loss_entry[0], loss_entry[1] if len(loss_entry) > 1 else None)
+                                mean_loss = np.mean(loss_history[save_iter:iter], axis=0)
 
-                        if model.get_iter() == 1:
+                                for loss_value in mean_loss:
+                                    loss_string += "[%.4f]" % (loss_value)
+
+                                io.log_info(loss_string)
+
+                                save_iter = iter
+                            else:
+                                for loss_value in loss_history[-1]:
+                                    loss_string += "[%.4f]" % (loss_value)
+
+                                if io.is_colab():
+                                    io.log_info('\r' + loss_string, end='')
+                                else:
+                                    io.log_info(loss_string, end='\r')
+
+                            if socketio is not None:
+                                socketio.emit('loss', loss_string)
+
+                            loss_entry = loss_history[-1]
+                            log_step(iter, iter_time, loss_entry[0], loss_entry[1] if len(loss_entry) > 1 else None)
+
+                            if model.get_iter() == 1:
+                                model_save()
+
+                            if model.get_target_iter() != 0 and model.is_reached_iter_goal():
+                                io.log_info('Reached target iteration.')
+                                model_save()
+                                is_reached_goal = True
+                                io.log_info('You can use preview now.')
+                    else:
+                        if is_just_paused:
                             model_save()
-
-                        if model.get_target_iter() != 0 and model.is_reached_iter_goal():
-                            io.log_info('Reached target iteration.')
-                            model_save()
-                            is_reached_goal = True
-                            io.log_info('You can use preview now.')
+                            model.finalize()
+                            model = None
+                            io.log_info('Now you can change you dataset and options from you configuration yaml file.')
+                            is_just_paused = False
 
                 if not is_reached_goal and (time.time() - last_preview_time) >= tensorboard_preview_interval_min*60:
                     last_preview_time += tensorboard_preview_interval_min*60
@@ -284,6 +353,10 @@ def trainerThread (s2c, c2s, e,
                         if is_reached_goal:
                             model.pass_one_iter()
                         send_preview()
+                    elif op == 'pause':
+                        is_paused = False if is_paused else True
+                        is_just_resumed = True if not is_paused else False
+                        is_just_paused = True
                     elif op == 'close':
                         model_save()
                         i = -1
@@ -666,6 +739,8 @@ def main(**kwargs):
                 if not is_waiting_preview:
                     is_waiting_preview = True
                     s2c.put({'op': 'preview'})
+            elif key == ord('u'):
+                s2c.put({'op': 'pause'})
             elif key == ord('l'):
                 if show_last_history_iters_count == 0:
                     show_last_history_iters_count = 5000
