@@ -1,3 +1,5 @@
+from audioop import mul
+from http import client
 from re import T
 from select import select
 import traceback
@@ -29,6 +31,101 @@ from DFLIMG import *
 
 DEBUG = False
 
+class FramesExtractorSubprocessor():
+    def __init__(self, video_path: str,
+                 fps: float,
+                 frames_queue: multiprocessing.Queue,
+                 chunk_size: int =0) -> None:
+        
+        self.video_path = video_path
+        self.fps = fps
+        self.chunk_size = chunk_size
+
+        self.p = multiprocessing.Process(target=self._subprocess_run, args=(frames_queue, ))
+        self.p.daemon = True
+
+    def run(self):
+        self.p.start()
+
+    def initialize(self):
+        major_ver, _, _ = cv2.__version__.split('.')
+        self._video = cv2.VideoCapture(self.video_path)
+
+        if int(major_ver) < 3:
+            framerate = self.video.get(cv2.cv.CV_CAP_PROP_FPS)
+        else:
+            framerate = self.video.get(cv2.CAP_PROP_FPS)
+
+        self.count = 0
+        self.idx = 0
+        # Number of iteration without size check
+        self.check_rate = 30
+        # Current iteration
+        self.tick = 0
+        # True when queue reached the chunk_size
+        self.wait = False
+
+        # if the chunk_size is not specified set it to 50 and let check_rate to the default value
+        if self.chunk_size == 0:
+            self.chunk_size = 50
+        else:
+            # else set the check_rate to the 30% of the chunk_size
+            self.check_rate = int(self.chunk_size * 30 / 100)
+
+        if self.fps != 0:
+            self.fps_to_extract = round(math.floor(framerate) / self.fps, 3)
+        else:
+            self.fps_to_extract = 1
+
+    def kill(self):
+        self.p.terminate()
+        self.p.join()
+
+    def _subprocess_run(self, frames_queue):
+
+        self.initialize()
+        success = True
+
+        try:
+            while success:
+                self.video.set(cv2.CAP_PROP_POS_FRAMES, self.count)
+                success, image = self.video.read()
+                if success:
+                    # If true, it's time to check the queue size
+                    if self.tick == self.check_rate:
+                        while True:
+                            if not self.wait:
+                                # if true we reached the max chunk size
+                                if frames_queue.qsize() >= self.chunk_size:
+                                    self.wait = True
+                                else:
+                                    # we didn't reach the max chunk size so we can continue to put
+                                    # frames in the queue
+                                    frames_queue.put((image, self.idx))
+                                    self.count += self.fps_to_extract
+                                    self.idx += 1
+                                    self.tick = 0
+                                    break
+                            else:
+                                # if true, the queue has the right size to continue to extract frames
+                                if frames_queue.qsize() <= self.chunk_size - self.check_rate:
+                                    self.wait = False
+                                    self.tick = 0
+                                    break
+                    else:
+                        # it's still not time to check the queue size
+                        frames_queue.put((image, self.idx))
+                        self.count += self.fps_to_extract
+                        self.idx += 1
+                        self.tick += 1
+        except KeyboardInterrupt:
+            self.kill()
+        finally:
+            self._video.release()
+    
+    def close_stream(self):
+        self._video.release()
+
 class ExtractSubprocessor(Subprocessor):
     class Data(object):
         def __init__(self, image=None, filepath=None, rects=None, landmarks = None, landmarks_accurate=True, manual=False, force_output_path=None, final_output_files = None):
@@ -45,73 +142,6 @@ class ExtractSubprocessor(Subprocessor):
             self.faces_detected = 0
 
     class Cli(Subprocessor.Cli):
-
-        def frames_generator(self, video_path, fps, queue_out: Queue, chunk_size=0):
-            major_ver, _, _ = cv2.__version__.split('.')
-            video = cv2.VideoCapture(str(video_path))
-            
-            if int(major_ver) < 3:
-                framerate = video.get(cv2.cv.CV_CAP_PROP_FPS)
-            else:
-                framerate = video.get(cv2.CAP_PROP_FPS)
-            
-            count = 0
-            idx = 0
-            # Number of iteration without size check
-            check_rate = 30
-            # Current iteration
-            tick = 0
-            # True when queue reached the chunk_size
-            wait = False
-
-            # if the chunk_size is not specified set it to 50 and let check_rate to the default value
-            if chunk_size == 0:
-                chunk_size = 50
-            else:
-                # else set the check_rate to the 30% of the chunk_size
-                check_rate = int(chunk_size * 30 / 100)
-
-            success, image = video.read()
-            success = True
-            if fps != 0:
-                fps_to_extract = round(math.floor(framerate) / fps, 3)
-            else:
-                fps_to_extract = 1
-
-            while success:
-                video.set(cv2.CAP_PROP_POS_FRAMES, count)
-                success, image = video.read()
-                if success:
-                    # If true, it's time to check the queue size
-                    if tick == check_rate:
-                        while True:
-                            if not wait:
-                                # if true we reached the max chunk size
-                                if queue_out.qsize() >= chunk_size:
-                                    wait = True
-                                else:
-                                    # we didn't reach the max chunk size so we can continue to put
-                                    # frames in the queue
-                                    queue_out.put((image, idx))
-                                    count += fps_to_extract
-                                    idx += 1
-                                    tick = 0
-                                    break
-                            else:
-                                # if true, the queue has the right size to continue to extract frames
-                                if queue_out.qsize() <= chunk_size - check_rate:
-                                    wait = False
-                                    tick = 0
-                                    break
-                    else:
-                        # it's still not time to check the queue size
-                        queue_out.put((image, idx))
-                        count += fps_to_extract
-                        idx += 1
-                        tick += 1
-
-            video.release()
-
         #override
         def on_initialize(self, client_dict):
             self.type                 = client_dict['type']
@@ -157,15 +187,12 @@ class ExtractSubprocessor(Subprocessor):
             if self.video_path is not None:
                 # true when no frame has been processed yet
                 self.first_frame = True
-
                 self.frames_queue = multiprocessing.Queue()
-                if sys.version_info[0] == 3 and sys.version_info[1] > 6:
-                    with Undaemonize():
-                        self.frames_processor = multiprocessing.Process(target=self.frames_generator, args=(self.video_path, fps, self.frames_queue, chunk_size if chunk_size is not None else 0))
-                        self.frames_processor.start()
-                else:
-                    self.frames_processor = multiprocessing.Process(target=self.frames_generator, args=(self.video_path, fps, self.frames_queue, chunk_size if chunk_size is not None else 0))
-                    self.frames_processor.start()
+                self.frames_extractor = FramesExtractorSubprocessor(str(self.video_path),
+                                            fps,
+                                            self.frames_queue,
+                                            chunk_size if chunk_size is not None else 0)
+                self.frames_extractor.run()
 
         #override
         def process_data(self, data):
@@ -386,7 +413,12 @@ class ExtractSubprocessor(Subprocessor):
 
         #override
         def on_finalize(self):
-            self.frames_processor.terminate()
+            self.frames_extractor.kill()
+
+        #override
+        def kill(self):
+            self.frames_extractor.kill()
+            self.frames_extractor.close_stream()
 
     def count_video_frames(self, video_path, fps):
             major_ver, _, _ = cv2.__version__.split('.')
@@ -1022,8 +1054,7 @@ def main(detector=None,
     else:
         io.log_info ('Extracting faces...')
         data = None
-        try:
-            sub = ExtractSubprocessor (None,
+        sub = ExtractSubprocessor (None,
                                         'all',
                                         image_size,
                                         jpeg_quality,
@@ -1035,10 +1066,7 @@ def main(detector=None,
                                         fps=fps,
                                         chunk_size=chunk_size,
                                         device_config=device_config)
-            data = sub.run()
-        except KeyboardInterrupt:
-            for process in multiprocessing.active_children():
-                process.terminate()
+        data = sub.run()
 
         if data is not None:
             faces_detected += sum([d.faces_detected for d in data])
